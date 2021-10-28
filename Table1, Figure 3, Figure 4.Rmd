@@ -1,0 +1,473 @@
+---
+title: "Phenotype Exploration and Stats from Amaranthus Growout"
+author: "Julia M. Kreiner"
+date: "06/12/2019"
+output: html_document
+---
+
+```{r setup, echo=FALSE ,include=FALSE}
+library(dplyr)
+library(lsmeans)
+library(readr)
+library(tidyr)
+library(ggplot2)
+library(Hmisc)
+library(plyr)
+library(RColorBrewer)
+library(reshape2)
+library(r2glmm)
+library(MuMIn) 
+library(lme4)
+library(car)
+library(lemon)
+library(MCMCglmm)
+#install.packages("actuar")
+library(actuar)
+#install.packages("fitdistrplus")
+library(r2glmm)
+library(MuMIn) 
+library(lme4)
+library(car)
+library(plotMCMC)
+library(doBy)
+library(emmeans)
+library(multcompView)
+library(lsmeans)
+library(multcomp)
+emm_options(pbkrtest.limit = 5000)
+
+#qqnorm(growout3$Dry.Biomass)
+#hist(growout3$Dry.Biomass,breaks=50)
+require(MASS)
+source("https://gist.githubusercontent.com/benmarwick/2a1bb0133ff568cbe28d/raw/fb53bd97121f7f9ce947837ef1a4c65a73bffb3f/geom_flat_violin.R")          
+
+growout<-read.csv("~/Dropbox//Planting & Block Designs - Phenotypes.csv",header = T,na.strings = c("","NA","FALSE","X"," ","<NA>","na","*"))
+growout_cc<-growout[complete.cases(growout),]
+
+#fix some variables and make a new one
+growout$StemWidth<-as.numeric(as.character(growout$StemWidth))
+growout$Dry.Biomass<-as.numeric(as.character(growout$Dry.Biomass))
+growout$DaystoFlower<-growout$Flowering.Time - growout$Germ_JD
+growout$DaystoHarvest<-growout$Harvest.Julian.Day - growout$Germ_JD
+growout$DaystoFirstMeas<-growout$Date_of_1Meas - growout$Germ_JD
+growout$Rateofheight<-growout$PlantHeight / growout$DaystoFlower
+growout$RateofLN<-growout$LeafNum / growout$DaystoFirstMeas
+growout$RateofNN<-growout$NodeNum / (growout$DaystoFlower)
+growout$RateofBiomass<-growout$Dry.Biomass / growout$DaystoHarvest
+growout$RateofCY<-growout$Cotyledon.mm. / (growout$DaystoFirstMeas)
+growout$RateofSW<-growout$StemWidth / (growout$DaystoFlower)
+growout$RateofHC<-growout$Hypocotyl.mm. / (growout$DaystoFirstMeas)
+growout$RateofHC<-growout$Hypocotyl.mm. / (growout$DaystoFirstMeas)
+growout$RateofFC<-growout$Flower.Color / (growout$DaystoHarvest)
+growout$RateofSC<-growout$Stem.Colour / (growout$DaystoHarvest)
+
+#do some filtering
+growout2 <-growout %>% 
+  filter(Late == 0 | Broken == 0)
+growout3<- growout2[is.na(growout2$Sex) == FALSE, ]
+growout3$NodeNum<-round(growout3$NodeNum,digits = 0)
+
+growout3$Family<-as.factor(growout3$Family)
+
+growout4<-growout3[complete.cases(growout3[-32]),]
+
+
+```
+
+<br />
+Some basic summaries of the growout:  
+```{r basic, echo=FALSE, warning=FALSE}
+sexs <-growout3 %>% group_by(Sex) %>% dplyr::summarise(count = n())
+sr<-sexs[2][1]$count[2]/sexs[2][1]$count[1]
+cat("the A. tuberculatus sex ratio is", sexs[2][1]$count[2],":",sexs[2][1]$count[1],"or",sr,"Male:Female")
+
+print(names(growout3))
+cat("The experiment has three Treatments:",levels(growout3$Treatment))
+cat("Spans the latitudes:",min(growout3$Lat),"-",max(growout3$Lat))
+cat("Spans the longitudes:",min(growout3$Long),"-",max(growout3$Long))
+cat("Has",max(growout3$Roof_Block),"blocks")
+cat("Has individuals from",length(unique(growout3$Family)),"maternal lines")
+cat("Has individuals from",length(unique(growout3$Pop)),"populations")
+cat("Has individuals from",length(unique(growout3$Pop)),"populations")
+cat("Has individuals from two Environments:",levels(growout3$Env))
+
+test <-growout3 %>% group_by(Env, Pop, Family) %>% dplyr::summarise(count = n())
+cat("On average,",mean(test$count),"Lines per Population ( sd =", sd(test$count))
+test <-growout3 %>% group_by(Env, Pop, Family, Sex) %>% dplyr::summarise(count = n())
+t2<-test %>% filter(Sex=="F") %>% summarize(mean=mean(count),sd=sd(count))
+t3<-test %>% filter(Sex=="M") %>% summarize(mean=mean(count),sd=sd(count))
+cat("On average,",t2$mean,"Females per Line ( sd =", t2$sd,") and", t3$mean, "Males ( sd =", t3$sd, ")")
+t5 <- growout3 %>% group_by(Env, Pop, Family, Treatment) %>% dplyr::summarise(count=n())
+t6<- t5 %>% summarize(mean=mean(count),sd=sd(count))
+cat("On average,",t6$mean,"Families per Treatment ( sd =", t6$sd,")")
+
+
+```
+
+```{r plotting figure 4, echo=F, warning=FALSE}
+
+ancestry<-read.table("~/ancestry_byaccession.txt",header=T)
+names(ancestry)[1]<-"Sample"
+
+popmean<-ancestry %>% group_by(Region) %>% dplyr::summarise(popmean_K1=mean(K1), Pop=first(Region))
+
+growout3$pop_K1<-popmean$popmean_K1[match(growout3$Pop,popmean$Pop)] 
+ancestry$Family<-growout$Family[match(ancestry$Sample,growout$Position)] 
+
+growout3$fam_K1<-ancestry$K1[match(growout3$Family,ancestry$Family)] 
+growout3$Pair<-as.character(as.integer(growout3$Pair))
+
+class(growout4$Pair)
+
+fam_sex_FT<- growout3 %>% group_by(Family) %>% dplyr::summarize(FTmeans = mean(na.omit(DaystoFlower)), Massmeans = mean(na.omit(Dry.Biomass)), NNmeans=mean(na.omit(NodeNum)),  NNvar = sd(na.omit(NodeNum)), FTvar = sd(na.omit(DaystoFlower)), BIOvar = sd(na.omit(Dry.Biomass)), PHmean=mean(na.omit(Rateofheight)), PHvar=sd(na.omit(Rateofheight)), Env=first(Env), Lat=first(Lat), Long=first(Long), GRMmean=mean(na.omit(Germ)), GRMvar=sd(na.omit(Germ)), SCmean=mean(na.omit(Stem.Colour)), HYPOmean=mean(na.omit(RateofHC)), HYPOvar=sd(na.omit(RateofHC)), SWmean=mean(na.omit(RateofSW)), SWvar=sd(na.omit(RateofSW)), K1=mean(pop_K1), SCvar=sd(na.omit(Stem.Colour)), LNrate=mean(na.omit(RateofLN)),LNvar=sd(na.omit(RateofLN)))
+
+
+long1<- ggplot(data=fam_sex_FT, aes(Long,FTmeans, color=K1)) +
+  geom_point(alpha=.8) +
+  geom_errorbar(aes(ymin=FTmeans-FTvar, ymax=FTmeans+FTvar), width=.1, alpha=.1) +
+  geom_smooth(method="lm", color="black") +
+  ylab("Days to Flowering") +
+  xlab("Longitude") +
+  theme_bw() +
+  scale_colour_gradient(low = "white", high = "black") +
+  labs(colour="var. rudis \nAncestry") +
+  ylim(25,70)
+
+
+long2<-ggplot(data=fam_sex_FT, aes(Long,SCmean,color=K1)) +
+  geom_point(alpha=.8) +
+  geom_errorbar(aes(ymin=SCmean-SCvar, ymax=SCmean+SCvar), width=.1, alpha=.1) +
+  geom_smooth(method="lm", color="black") +
+  ylab("Stem Colour \n(Green to Fuchsia, 1-4)") +
+  xlab("Longitude") +
+  theme_bw() +
+  scale_colour_gradient(low = "white", high = "black") +
+  labs(colour="var. rudis \nAncestry") +
+  ylim(-0.5,3)
+
+long3<-ggplot(data=fam_sex_FT, aes(Long,NNmeans,color=K1)) +
+  geom_point(alpha=.8) +
+  geom_errorbar(aes(ymin=NNmeans-NNvar, ymax=NNmeans+NNvar), width=.1, alpha=.1) +
+  geom_smooth(method="lm", color="black") +
+  ylab("Node Number at Flowering") +
+  xlab("Longitude") +
+  theme_bw() +
+  scale_colour_gradient(low = "white", high = "black") +
+  labs(colour="var. rudis \nAncestry") 
+
+grid_arrange_shared_legend(long1,long3, long2, position = "right")
+
+lat1<- ggplot(data=fam_sex_FT, aes(Lat,FTmeans,color=K1)) +
+  geom_point(alpha=.8) +
+  geom_errorbar(aes(ymin=FTmeans-FTvar, ymax=FTmeans+FTvar), width=.1, alpha=.1) +
+  geom_smooth(method="lm", color="black") +
+  ylab("Days to Flowering") +
+  xlab("Latitude") +
+  theme_bw() +
+  scale_colour_gradient(low = "white", high = "black") +
+  labs(colour="var. rudis \nAncestry")
+
+lat2<- ggplot(data=fam_sex_FT, aes(Lat,SWmean,color=K1)) +
+  geom_point(alpha=.8) +
+  geom_errorbar(aes(ymin=SWmean-SWvar, ymax=SWmean+SWvar), width=.1, alpha=.1) +
+  geom_smooth(method="lm", color="black") +
+  ylab("Rate of Stem Width (mm/day)") +
+  xlab("Latitude") +
+  theme_bw() +
+  scale_colour_gradient(low = "white", high = "black") +
+  labs(colour="var. rudis \nAncestry")
+
+
+lat3 <- ggplot(data=fam_sex_FT, aes(Lat,PHmean,color=K1)) +
+  geom_point(alpha=.8) +
+  geom_errorbar(aes(ymin=PHmean-PHvar, ymax=PHmean+PHvar), width=.1, alpha=.1) +
+  geom_smooth(method="lm", color="black") +
+  ylab("Rate of Hypocotyl Length \n(mm/day)") +
+  xlab("Latitude") +
+  theme_bw() +
+  scale_colour_gradient(low = "white", high = "black") +
+  labs(colour="var. rudis \nAncestry")
+
+grid_arrange_shared_legend(lat1,lat2,lat3, position = "right")
+
+
+#ggplot(data=fam_sex_FT, aes(Lat,Massmeans,color=K1)) +
+#  geom_point(alpha=.8) +
+#  geom_errorbar(aes(ymin=Massmeans-BIOvar, ymax=Massmeans+BIOvar), width=.1, alpha=.1) +
+#  geom_smooth(method="lm", color="black") +
+#  ylab("Dry Biomass") +
+#  xlab("Latitude") +
+#  theme_bw() +
+#  scale_colour_gradient(low = "white", high = "black") +
+#  labs(colour="var. rudis \nAncestry") +
+#  ylim(0,20)
+
+raincloud_theme = theme(  text = element_text(size = 10),  axis.title.x = element_text(size = 16), axis.title.y = element_text(size = 16),  axis.text = element_text(size = 14),  axis.text.x = element_text(angle = 45, vjust = 0.5),  legend.title=element_text(size=16),  legend.text=element_text(size=16),  legend.position = "right",  plot.title = element_text(lineheight=.8, face="bold", size = 16),  panel.border = element_blank(), panel.grid.minor = element_blank(),  panel.grid.major = element_blank(),  axis.line.x = element_line(colour = 'black', size=0.5, linetype='solid'),  axis.line.y = element_line(colour = 'black', size=0.5, linetype='solid'))
+
+ggplot(data = growout3, aes(y = DaystoFlower, x = Env, fill = Env)) +
+  geom_flat_violin(position = position_nudge(x = 0, y = 0), alpha = .8) +
+  geom_point(position =position_jitterdodge(jitter.width = .1), size = .5, alpha = 0.3) +
+  geom_boxplot(position= position_nudge(x=-.2), width = .1, guides = FALSE, outlier.shape = NA, alpha = 0.9) +
+  guides(fill = FALSE) +
+  guides(color = FALSE) +
+  scale_color_manual(values = c(bay[5],bay[1])) +
+  scale_fill_manual(values = c(bay[5],bay[1])) +
+  #coord_flip() +
+  theme_bw() +
+  raincloud_theme
+
+library(ggforce)
+
+treatmentwise_FT<- growout3 %>% group_by(Family, Treatment, Env, Sex) %>% dplyr::summarize(FTmeans = mean(na.omit(Germ)), FTvar = sd(na.omit(Germ)), Env=first(Env)) #similar result
+
+treatmentwise_FT_pop<- growout3 %>% group_by(Pop, Treatment) %>% dplyr::summarize(FTmeans = mean(na.omit(DaystoFlower)), FTvar = sd(na.omit(DaystoFlower)), Env=first(Env)) #similar result
+bay<-pnw_palette("Bay",8,type="continuous")
+
+env1 <- ggplot(data=fam_sex_FT, aes(y=FTmeans, x=Env, color=Env)) +
+  #geom_point(position = position_jitterdodge(jitter.width = .3), size =1, alpha = 0.2) +
+  geom_sina(alpha=.2, size=2) +
+  geom_boxplot(alpha=.8) +
+  ylab("Days to Flowering") +
+  xlab("Environment") +
+  theme_bw() +
+  scale_color_manual(values = c(bay[5],bay[1])) +
+  scale_fill_manual(values = c(bay[5],bay[1])) 
+
+env3 <- treatmentwise_FT %>% #filter(Sex=="M") %>% 
+  ggplot(aes(x=interaction(Env,Treatment), y=FTmeans, color = Env, shape=Sex)) + # Change fill to color
+  theme_bw() + 
+  geom_point(alpha=.1) + 
+  geom_errorbar(aes(ymin=FTmeans-FTvar, ymax=FTmeans+FTvar), width=.2, alpha=.05) +
+#   Lines by species using grouping
+  stat_summary(aes(group = Family), geom = "line", fun.y = mean, alpha=.2) +
+  stat_summary(geom = "point", fun=median, size=4, alpha=.8) +
+  ylab("Days to Germination") +
+  #ggtitle("Family-wise Means") +
+  scale_color_manual(values=c(bay[5],bay[1])) +
+  scale_fill_manual(values=c("white","black")) +
+  ylim(4.5,10)
+
+germ_glmm_k1<-lmer(data=germ, Germ ~ Treatment*Env + Sex  + pop_K1 + Lat + Long
+                     + (1|GH:GH_Block)  + (1|Pop/Family))
+germ_lsmeans<-as.data.frame(lsmeans(germ_glmm_k1, type = "response",specs=c("Treatment","Env")))
+
+germ_lsmeans$Treatment<-levels(germ_lsmeans$Treatment)[c(2,1,3)]
+env3 <- ggplot(data=germ_lsmeans, aes(x=Treatment,lsmean, color=Env)) +
+  geom_point() +
+  geom_line() +
+  stat_summary(aes(group = Env), geom = "line", fun.y = mean, alpha=.2,lwd=2, color="Black") +
+  geom_errorbar(aes(ymax=lsmean+SE, ymin=lsmean-SE),width=.1) +
+  theme_bw() +
+  #theme(axis.text.x = element_text(angle = 45, vjust = 0.5)) +
+  scale_color_manual(values = c(bay[5],bay[1])) +
+  ylab("Days to Germination \n(LSmean)")
+
+
+env2<-ggplot(data=fam_sex_FT, aes(y=LNrate, x=Env, color=Env)) +
+  #geom_point(position = position_jitterdodge(jitter.width = .3), size =1, alpha = 0.2) +
+  geom_sina(alpha=.2, size=2) +
+  geom_boxplot(alpha=.8) +
+  ylab("Rate of Early Leaf Number") +
+  xlab("Environment") +
+  theme_bw() +
+  scale_color_manual(values = c(bay[5],bay[1])) +
+  scale_fill_manual(values = c(bay[5],bay[1])) +
+  ylim(0,3)
+
+
+grid_arrange_shared_legend(env1,env2,env3, position = "right")
+
+
+```
+''
+### Linear Mixed Models
+```{r lmms, warning=FALSE}
+
+ancestry<-read.table("~/ancestry_byaccession.txt",header=T)
+names(ancestry)[1]<-"Sample"
+popmean<-ancestry %>% group_by(Region) %>% dplyr::summarise(popmean_K1=mean(K1), Pop=first(Region))
+growout4$pop_K1<-popmean$popmean_K1[match(growout4$Pop,popmean$Pop)] 
+growout4$Pair<-as.character(as.integer(growout4$Pair))
+
+#height at flowering
+height_glmm_k1<-glmer(data=growout4, PlantHeight ~  Env + Treatment + Sex + Flowering.Time + Lat + Long + pop_K1
+                  + (1|Roof_Block)  + (1|Pop/Family))
+height_glmm<-glmer(data=growout4, PlantHeight ~  Env + Treatment + Sex  + Flowering.Time + Lat + Long + (1|Roof_Block)  + (1|Pop/Family))
+
+Anova(height_glmm,type = 3)
+Anova(height_glmm_k1,type = 3)
+AIC(height_glmm_k1,height_glmm)
+summary(height_glmm_k1)
+
+#nodenumber at flowering
+nn_glmm_K1<-glmer(data=growout4, NodeNum ~  Env + Treatment  + Sex + Lat + Long + DaystoFlower + pop_K1
+                  + (1|Roof_Block)  + (1|Pop/Family))
+nn_glmm<-glmer(data=growout4, NodeNum ~  Env + Treatment  + Sex + Lat + Long + DaystoFlower
+                  + (1|Roof_Block)  + (1|Pop/Family))
+Anova(nn_glmm_K1,type = 3)
+Anova(nn_glmm,type = 3)
+AIC(nn_glmm)-AIC(nn_glmm_K1)
+
+#stemwidth at flowering
+sw_glmm_k1<-glmer(data=growout4, StemWidth ~  Env + Treatment  + Sex + Lat + Long + DaystoFlower + pop_K1
+                  + (1|Roof_Block)  + (1|Pop/Family))
+sw_glmm<-glmer(data=growout4, StemWidth ~  Env + Treatment  + Sex + Lat + Long + DaystoFlower
+                  + (1|Roof_Block)  + (1|Pop/Family))
+
+Anova(sw_glmm,type = 3)
+Anova(sw_glmm_k1,type = 3)
+
+summary(sw_glmm_k1)
+AIC(sw_glmm)
+AIC(sw_glmm_k1)
+
+#daystoflower
+ft_glmm_k1<-glmer(data=growout4, DaystoFlower ~  Env + Treatment  + Sex*Lat + Long + pop_K1
+                  + (1|Roof_Block)  + (1|Pop/Family))
+ft_glmm<-glmer(data=growout4, DaystoFlower ~  Env + Treatment  + Sex*Lat + Long
+                  + (1|Roof_Block)  + (1|Pop/Family))
+                  
+Anova(ft_glmm,type = 3)
+Anova(ft_glmm_k1,type = 3)
+
+
+#biomass
+bm_glmm_k1<-glmer(data=growout4, Dry.Biomass ~  Env+ Treatment*Sex + DaystoHarvest + Lat + Long + pop_K1
+                  + (1|Roof_Block)  + (1|Pop/Family))
+
+bm_glmm<-glmer(data=growout4, Dry.Biomass ~  Env + Treatment*Sex + DaystoHarvest + Lat + Long
+                  + (1|Roof_Block)  + (1|Pop/Family))
+
+Anova(bm_glmm,type = 3)
+Anova(bm_glmm_k1,type = 3)
+AIC(bm_glmm)-AIC(bm_glmm_k1)
+
+#days to germination
+
+growout3$pop_K1<-popmean$popmean_K1[match(growout3$Pop,popmean$Pop)] 
+ancestry$Family<-growout$Family[match(ancestry$Sample,growout$Position)] 
+growout3$fam_K1<-ancestry$K1[match(growout3$Family,ancestry$Family)] 
+growout3$Pair<-as.character(as.integer(growout3$Pair))
+germ<-growout3[growout3$Germ_JD!="NA",]
+
+
+germ_glmm_k1<-lmer(data=germ, Germ ~ Treatment*Env + Sex  + pop_K1 + Lat + Long
+                     + (1|GH:GH_Block)  + (1|Pop/Family))
+germ_glmm<-lmer(data=germ, Germ ~ Treatment*Env + Sex  + Lat + Long
+                     + (1|GH:GH_Block)  + (1|Pop/Family))
+                     
+Anova(germ_glmm,type = 3)
+Anova(germ_glmm_k1,type = 3)
+summary(germ_glmm_k1)
+AIC(germ_glmm)-AIC(germ_glmm_k1)
+
+#cotyledon width
+coty_glmm_k1<-lmer(data=growout4, Cotyledon.mm. ~ Env + Treatment + DaystoFirstMeas + Sex + Lat + Long + LeafNum + pop_K1
+                  + (1|Roof_Block) + (1|Pop/Family))
+coty_glmm<-lmer(data=growout4, Cotyledon.mm. ~ Env + Treatment + DaystoFirstMeas + Sex + Lat + Long + LeafNum +
+                  + (1|Roof_Block) + (1|Pop/Family))
+
+Anova(type=3,coty_glmm_k1 )
+Anova(type=3,coty_glmm )
+AIC(coty_glmm)-AIC(coty_glmm_k1)
+summary(coty_glmm_k1)
+
+
+#hypocotyl length
+hypo_glmm_k1<-glmer(data=growout4, Hypocotyl.mm. ~ Env + Treatment + DaystoFirstMeas + Sex + Lat + Long + LeafNum + pop_K1 + (1|Roof_Block) + (1|Pop/Family))
+=hypo_glmm<-glmer(data=growout4, Hypocotyl.mm. ~ Env + Treatment + DaystoFirstMeas + Sex + Lat + Long + LeafNum + (1|Roof_Block) + (1|Pop/Family))
+
+Anova(type=3,hypo_glmm )
+Anova(type=3,hypo_glmm_k1 )
+AIC(hypo_glmm)-AIC(hypo_glmm_k1)
+
+
+#early leaf num
+ln_glmm_k1<-lmer(data=growout4, LeafNum ~ Env + Treatment + DaystoFirstMeas + Sex + Lat + Long + pop_K1
+                + (1|Roof_Block) + (1|Pop/Family))
+ln_glmm<-lmer(data=growout4, LeafNum ~ Env + Treatment + DaystoFirstMeas + Sex + Lat + Long 
+                + (1|Roof_Block) + (1|Pop/Family))
+
+Anova(ln_glmm,type = 3)
+Anova(ln_glmm_k1,type = 3)
+AIC(ln_glmm)-AIC(ln_glmm_k1)
+
+```
+
+
+
+##generalized linear mixed models
+```{r glmms, warning=FALSE}
+library(R2admb)
+library(glmmADMB)
+growout4$Env<-as.factor(growout4$Env)
+growout4$Family<-as.factor(growout4$Family)
+growout4$Pop<-as.factor(growout4$Pop)
+growout4$Roof_Block<-as.factor(growout4$Roof_Block)
+growout4$GH_Block<-as.factor(growout4$GH_Block)
+growout4_nomiss<-growout4[is.na(growout4$pop_K1) == "FALSE",]
+
+#flower color
+
+fc_multinom_anc<-glmmadmb(data=growout4_nomiss, Flower.Color ~  Env + Treatment + Sex  + Lat + Long + Flower.Color + pop_K1
+                  + (1|GH_Block)  + (1|Pop/Family), family="logit")
+fc_multinom_noanc<-glmmadmb(data=growout4_nomiss, Flower.Color ~  Env + Treatment + Sex  + Lat + Long + Flower.Color + pop_K1
+                  + (1|GH_Block)  + (1|Pop/Family), family="logit")
+summary(fc_multinom_anc)
+Anova(fc_multinom_anc)
+AIC(fc_multinom_anc)-AIC(fc_multinom_noanc)
+
+#stem color
+
+sc_multinom_anc<-glmmadmb(data=growout4_nomiss, Stem.Colour ~  Env + Treatment + Sex  + Lat + Long + Flower.Color + pop_K1
+                  + (1|GH_Block)  + (1|Pop/Family), family="logit")
+sc_multinom_noanc<-glmmadmb(data=growout4_nomiss, Stem.Colour ~  Env + Treatment + Sex  + Lat + Long + Flower.Color + pop_K1
+                  + (1|GH_Block)  + (1|Pop/Family), family="logit")
+summary(sc_multinom_anc)
+Anova(sc_multinom_anc)
+AIC(sc_multinom_anc)-AIC(sc_multinom_noanc)
+
+```
+
+
+
+##plasticity plotting (Figure 3)
+```{r lmms, warning=FALSE}
+
+
+familywise_fit<- growout3 %>% group_by(Family, Treatment) %>% dplyr::summarize(FTmeans = mean(na.omit(DaystoFlower)), FTvar = sd(na.omit(DaystoFlower)), BMmeans=mean(Dry.Biomass,na.rm=T), BMvar=sd(Dry.Biomass, na.rm=T), Env=first(Env)) #similar result
+
+popwise_fit<- growout3 %>% group_by(Pop, Treatment) %>% dplyr::summarize(FTmeans = mean(na.omit(DaystoFlower)), FTvar = sd(na.omit(DaystoFlower)), Env=first(Env),BMmeans=mean(Dry.Biomass,na.rm=T), BMvar=sd(Dry.Biomass, na.rm=T)) #similar result
+
+popwise_fit$Treatment <- factor(popwise_fit$Treatment, levels = c("Water", "Control", "Soy"))
+
+p11 <-ggplot(popwise_fit,aes(x=Treatment, y=BMmeans, color = Env)) + # Change fill to color
+  theme_bw() + 
+  geom_point(size=.5) + 
+  #geom_errorbar(aes(ymin=BMmeans-BMvar, ymax=BMmeans+BMvar), width=.2, alpha=.1) +
+  #   Lines by species using grouping
+  stat_summary(aes(group = Pop), geom = "line", fun.y = mean, alpha=.5) +
+  stat_summary(aes(group = Env), geom = "line", fun.y = mean, size=2.5,alpha=1) +
+  stat_summary(aes(group = Env), geom = "point", fun.y = mean, size=2.5, alpha=1) +
+  ylab("Dry Biomass (g)")+
+  #ggtitle("Pop-wise Means") +
+  scale_color_manual(values=c(bay[5],bay[1]))
+
+
+p12 <- ggplot(popwise_fit,aes(x=Treatment, y=FTmeans)) + # Change fill to color
+  theme_bw() + 
+  geom_point(size=.8, aes(color = Env)) + 
+  #geom_errorbar(aes(ymin=FTmeans-FTvar, ymax=FTmeans+FTvar), width=.2, alpha=.1) +
+  #   Lines by species using grouping
+  stat_summary(aes(group = Pop,color = Env), geom = "line", fun = mean, alpha=.5) +
+  stat_summary(aes(group = Env,color = Env), geom = "line", fun = mean, size=2.5, alpha=1) +
+  stat_summary(aes(group = Env,color = Env), geom = "point", fun = mean, size=2.5, alpha=1) +
+  #stat_summary(fun.data = "mean_cl_boot", size=1, alpha=.8) +
+  ylab("Days to Flowering")+
+  #ggtitle("Pop-wise Means") +
+  scale_color_manual(values=c(bay[5],bay[1]))
+
+
+grid_arrange_shared_legend(p11,p12, ncol=2, nrow=1)
+
+```
