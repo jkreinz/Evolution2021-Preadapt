@@ -10,6 +10,6 @@ Phenotype data and scripts for Kreiner et al., Evolution2021 - Selective ancestr
 
 [R script for generating Figure 5 and related analyses](https://github.com/jkreinz/Evolution2021-Preadapt/blob/main/Treatment%20by%20ancestry%2C%20Figure%205%20inference.R) - Tests for preadaptation (ancestry by treatment interaction), de novo adaptation (environmental effects), and hybrid vigour (non-linear ancestry effects). Analysis done at the family mean within treatment level, seperately across sexes.
 
-Alignment & SNPcalling
+[Script for Alignment & SNPcalling]()
 
-Population Structure
+[Script for Population Structure]()
