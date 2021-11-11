@@ -6,7 +6,6 @@
 
 [Common Garden Phenotypes](https://github.com/jkreinz/Evolution2021-Preadapt/blob/main/Common%20Garden%20Phenotypes) - Phenotypes measured across 6000 individuals in the manipulative common garden experiment 
 
-[Family mean by treatment averages, including ancestry estimates](https://github.com/jkreinz/Evolution2021-Preadapt/blob/main/Treatmentspecificmeans_byfamily_bysex.txt) - Family mean within treatments, used as input for figure 5 and related analyses
 
 ### Scripts:
 
