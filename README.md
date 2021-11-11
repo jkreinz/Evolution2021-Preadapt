@@ -13,6 +13,6 @@
 
 [R script for generating Figure 5 and related analyses](https://github.com/jkreinz/Evolution2021-Preadapt/blob/main/Treatment%20by%20ancestry%2C%20Figure%205%20inference.R) - Tests for preadaptation (ancestry by treatment interaction), de novo adaptation (environmental effects), and hybrid vigour (non-linear ancestry effects). Analysis done at the family mean within treatment level, seperately across sexes.
 
-[R script for analyzing population Structure](https://github.com/jkreinz/Evolution2021-Preadapt/blob/main/popstructure.R) - scripts for producing figure 2
+[R script for analyzing and plotting population structure](https://github.com/jkreinz/Evolution2021-Preadapt/blob/main/popstructure.R) - scripts for producing figure 2
 
-[Bash script for Alignment & SNPcalling]()
+[Bash script for Alignment & SNP calling]()
