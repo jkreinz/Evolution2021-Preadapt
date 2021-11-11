@@ -12,4 +12,4 @@
 
 [Script for Alignment & SNPcalling]()
 
-[Script for Population Structure]()
+[R script for analyzing population Structure](https://github.com/jkreinz/Evolution2021-Preadapt/blob/main/popstructure.R) - scripts for producing figure 1
