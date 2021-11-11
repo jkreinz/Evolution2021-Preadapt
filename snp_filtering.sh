@@ -1,3 +1,9 @@
+############################
+#filtering freebayes called SNPs
+#adapted from http://www.ddocent.com/filtering/, https://arxiv.org/pdf/1404.0929.pdf
+############################
+
+
 #merge individual regional files by chr
 cat ../scafs | parallel -j 16 "mkdir temp_{} && cat ../{}:* | vcffirstheader | vcfstreamsort -w 10000 | vcfuniq | vcfallelicprimitives --keep-info | bcftools
 sort -T temp_{} - > {}_herblastrerun.vcf"
