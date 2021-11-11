@@ -31,7 +31,7 @@ prefx=$3
 #cat ${prefx}*_2.fq.gz > ${prefx}.R2.fastq.gz
 
 # 1. Remove adapters, polyQ tails
-#$fastp --in1 ${prefx}.R1.fastq.gz --in2 ${prefx}.R2.fastq.gz --out1 ${prefx}.R1.unmerged.fastq.gz --out2 ${prefx}.R2.unmerged.fastq.gz
+$fastp --in1 ${prefx}.R1.fastq.gz --in2 ${prefx}.R2.fastq.gz --out1 ${prefx}.R1.unmerged.fastq.gz --out2 ${prefx}.R2.unmerged.fastq.gz
 
 # 2. Map reads to Reference Genome
 bwa mem -t $threads -R "@RG\tID:$prefx\tSM:$prefx" $reference ${pathtobams}/${prefx}.R1.unmerged.fastq.gz ${pathtobams}/${prefx}.R1.unmerged.fastq.gz | samtools view -@ $threads -Sbh - > /ohta/julia.kreiner/waterhemp/commongarden/bams/secondhalf/${prefx}.uns.bam
